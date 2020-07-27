@@ -16,7 +16,7 @@ module Calamity.Client.Types
     , getCustomEventHandlers ) where
 
 import           Calamity.Cache.Eff
-import           Calamity.Gateway.DispatchEvents ( CalamityEvent(..), InviteCreateData, InviteDeleteData, ReadyData )
+import           Calamity.Gateway.DispatchEvents ( CalamityEvent(..), InviteCreateData, InviteDeleteData, ReadyData, VoiceStateUpdateData, VoiceServerUpdateData )
 import           Calamity.Gateway.Types          ( ControlMessage )
 import           Calamity.HTTP.Internal.Types
 import           Calamity.Metrics.Eff
@@ -152,6 +152,8 @@ data EventType
   -- ^ Fired when all reactions are removed from a message.
   | TypingStartEvt
   | UserUpdateEvt
+  | VoiceStateUpdateEvt
+  | VoiceServerUpdateEvt
   | forall s a. CustomEvt s a
   -- ^ A custom event, @s@ is the name and @a@ is the data sent to the handler
 
@@ -206,6 +208,8 @@ type family EHType (d :: EventType) where
   EHType 'RawMessageReactionRemoveAllEvt = Snowflake Message
   EHType 'TypingStartEvt              = (Channel, Snowflake User, UnixTimestamp)
   EHType 'UserUpdateEvt               = (User, User)
+  EHType 'VoiceStateUpdateEvt         = VoiceStateUpdateData
+  EHType 'VoiceServerUpdateEvt        = VoiceServerUpdateData
   EHType ('CustomEvt s a)             = a
 
 type StoredEHType t = EHType t -> IO ()
