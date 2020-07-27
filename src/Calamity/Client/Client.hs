@@ -596,6 +596,12 @@ handleEvent' eh evt@(UserUpdate _) = do
   Just newUser <- getBotUser
   pure $ map ($ (oldUser, newUser)) (getEventHandlers @'UserUpdateEvt eh)
 
+handleEvent' eh (VoiceStateUpdate d) = do
+  pure $ map ($ d) (getEventHandlers @'VoiceStateUpdateEvt eh)
+
+handleEvent' eh (VoiceServerUpdate d) = do
+  pure $ map ($ d) (getEventHandlers @'VoiceServerUpdateEvt eh)
+
 handleEvent' _ e = fail $ "Unhandled event: " <> show e
 
 updateCache :: P.Members '[CacheEff, P.Fail] r => DispatchData -> P.Sem r ()
