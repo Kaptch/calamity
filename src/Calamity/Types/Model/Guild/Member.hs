@@ -40,6 +40,7 @@ data Member = Member
   , mute          :: Bool
   }
   deriving ( Eq, Show, Generic )
+  deriving ( ToJSON )
   deriving ( TextShow ) via TSG.FromGeneric Member
   deriving ( FromJSON ) via WithSpecialCases '[
     "user" `ExtractFields` ["id", "username", "discriminator",
