@@ -222,13 +222,30 @@ data TypingStartData = TypingStartData
   deriving ( Show, Generic )
   deriving FromJSON via CalamityJSON TypingStartData
 
-newtype VoiceStateUpdateData = VoiceStateUpdateData Value
-  deriving newtype ( Show, Generic )
-  deriving newtype ( ToJSON, FromJSON )
+data VoiceStateUpdateData = VoiceStateUpdateData
+  { guildID :: Maybe (Snowflake Guild)
+  , channelID :: Maybe (Snowflake Channel)
+  , userID :: Snowflake User
+  , member :: Maybe Member
+  , sessionID :: Text
+  , deaf :: Bool
+  , mute :: Bool
+  , selfMute :: Bool
+  , selfDeaf :: Bool
+  , selfStream :: Maybe Bool
+  , selfVideo :: Bool
+  , suppress :: Bool
+  }
+  deriving ( Show, Generic )
+  deriving FromJSON via CalamityJSON VoiceStateUpdateData
 
-newtype VoiceServerUpdateData = VoiceServerUpdateData Value
-  deriving newtype ( Show, Generic )
-  deriving newtype ( ToJSON, FromJSON )
+data VoiceServerUpdateData = VoiceServerUpdateData
+  { token :: Text
+  , guildID :: Snowflake Guild
+  , endpoint :: Text
+  }
+  deriving ( Show, Generic )
+  deriving FromJSON via CalamityJSON VoiceServerUpdateData
 
 newtype WebhooksUpdateData = WebhooksUpdateData Value
   deriving newtype ( Show, Generic )

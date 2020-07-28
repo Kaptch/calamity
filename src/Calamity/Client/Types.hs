@@ -264,6 +264,8 @@ instance Default EventHandlers where
                                  , WrapTypeable $ EH @'MessageReactionRemoveAllEvt []
                                  , WrapTypeable $ EH @'TypingStartEvt []
                                  , WrapTypeable $ EH @'UserUpdateEvt []
+                                 , WrapTypeable $ EH @'VoiceStateUpdateEvt []
+                                 , WrapTypeable $ EH @'VoiceServerUpdateEvt []
                                  , WrapTypeable $ EH @('CustomEvt Void Dynamic) LH.empty
                                  ]
 
