@@ -32,4 +32,25 @@ data VoiceState = VoiceState
   }
   deriving ( Show, Eq, Generic )
   deriving ( TextShow ) via TSG.FromGeneric VoiceState
-  deriving ( ToJSON, FromJSON ) via CalamityJSON VoiceState
+  deriving ( ToJSON ) via CalamityJSON VoiceState
+
+instance FromJSON VoiceState where
+  parseJSON = withObject "VoiceState" $ \v -> do
+    g_id <- v .:? "guild_id"
+    let member = case g_id of
+          Nothing -> pure Nothing
+          Just g_id' -> do
+            member' <- v .:? "member"
+            traverse (\m -> parseJSON $ Object (m <> "guild_id" .= g_id')) member'
+    VoiceState g_id
+      <$> v .:? "channel_id"
+      <*> v .: "user_id"
+      <*> member
+      <*> v .: "session_id"
+      <*> v .: "deaf"
+      <*> v .: "mute"
+      <*> v .: "self_deaf"
+      <*> v .: "self_mute"
+      <*> v .:? "self_stream"
+      <*> v .: "self_video"
+      <*> v .: "suppress"

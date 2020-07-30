@@ -12,6 +12,7 @@ import           Calamity.Types.Model.Guild.Guild
 import           Calamity.Types.Model.Guild.Member
 import           Calamity.Types.Model.Guild.Role
 import           Calamity.Types.Model.Guild.UnavailableGuild
+import           Calamity.Types.Model.Voice.VoiceState
 import           Calamity.Types.Model.Presence.Presence
 import           Calamity.Types.Model.User
 import           Calamity.Types.Snowflake
@@ -222,20 +223,7 @@ data TypingStartData = TypingStartData
   deriving ( Show, Generic )
   deriving FromJSON via CalamityJSON TypingStartData
 
-data VoiceStateUpdateData = VoiceStateUpdateData
-  { guildID :: Maybe (Snowflake Guild)
-  , channelID :: Maybe (Snowflake Channel)
-  , userID :: Snowflake User
-  , member :: Maybe Member
-  , sessionID :: Text
-  , deaf :: Bool
-  , mute :: Bool
-  , selfMute :: Bool
-  , selfDeaf :: Bool
-  , selfStream :: Maybe Bool
-  , selfVideo :: Bool
-  , suppress :: Bool
-  }
+data VoiceStateUpdateData = VoiceStateUpdateData VoiceState
   deriving ( Show, Generic )
   deriving FromJSON via CalamityJSON VoiceStateUpdateData
 
