@@ -11,6 +11,10 @@ import           Calamity.Types.Snowflake
 import           Data.Aeson
 import           Data.Text.Lazy                           ( Text )
 
+import           Debug.Trace
+import           Data.Aeson.Types
+import qualified Data.Text.Internal as IT
+
 import           GHC.Generics
 
 import           TextShow
@@ -37,6 +41,8 @@ data VoiceState = VoiceState
 instance FromJSON VoiceState where
   parseJSON = withObject "VoiceState" $ \v -> do
     g_id <- v .:? "guild_id"
+    c_id <- ((.:?) :: Object -> IT.Text -> Parser (Maybe (Snowflake VoiceChannel))) v "channel_id"
+    trace (show c_id) $ pure ()
     let member = case g_id of
           Nothing -> pure Nothing
           Just g_id' -> do
