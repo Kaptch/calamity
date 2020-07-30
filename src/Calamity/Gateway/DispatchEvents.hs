@@ -13,6 +13,7 @@ import           Calamity.Types.Model.Guild.Member
 import           Calamity.Types.Model.Guild.Role
 import           Calamity.Types.Model.Guild.UnavailableGuild
 import           Calamity.Types.Model.Voice.VoiceState
+import           Calamity.Types.Model.Voice.VoiceServer
 import           Calamity.Types.Model.Presence.Presence
 import           Calamity.Types.Model.User
 import           Calamity.Types.Snowflake
@@ -227,13 +228,9 @@ data VoiceStateUpdateData = VoiceStateUpdateData VoiceState
   deriving ( Show, Generic )
   deriving ( ToJSON, FromJSON )
 
-data VoiceServerUpdateData = VoiceServerUpdateData
-  { token :: Text
-  , guildID :: Snowflake Guild
-  , endpoint :: Text
-  }
+data VoiceServerUpdateData = VoiceServerUpdateData VoiceServer
   deriving ( Show, Generic )
-  deriving FromJSON via CalamityJSON VoiceServerUpdateData
+  deriving ( ToJSON, FromJSON )
 
 newtype WebhooksUpdateData = WebhooksUpdateData Value
   deriving newtype ( Show, Generic )
