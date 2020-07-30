@@ -225,7 +225,7 @@ data TypingStartData = TypingStartData
 
 data VoiceStateUpdateData = VoiceStateUpdateData VoiceState
   deriving ( Show, Generic )
-  deriving FromJSON via CalamityJSON VoiceStateUpdateData
+  deriving ( ToJSON, FromJSON )
 
 data VoiceServerUpdateData = VoiceServerUpdateData
   { token :: Text
