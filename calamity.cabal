@@ -120,6 +120,7 @@ library
       Calamity.Types.Model.Voice
       Calamity.Types.Model.Voice.VoiceRegion
       Calamity.Types.Model.Voice.VoiceState
+      Calamity.Types.Model.Voice.VoiceServer
       Calamity.Types.Partial
       Calamity.Types.Snowflake
       Calamity.Types.Tellable
