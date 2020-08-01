@@ -13,7 +13,8 @@ module Calamity.Gateway.Types
     , ControlMessage(..)
     , ShardFlowControl(..)
     , Shard(..)
-    , ShardState(..) ) where
+    , ShardState(..)
+    , VoiceStateUpdatePayload(..)) where
 
 import           Calamity.Gateway.DispatchEvents
 import           Calamity.Gateway.Intents
