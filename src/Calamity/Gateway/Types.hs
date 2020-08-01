@@ -21,7 +21,7 @@ import           Calamity.Internal.AesonThings
 import           Calamity.Metrics.Eff
 import           Calamity.Types.LogEff
 import           Calamity.Types.Model.Guild.Guild
-import           Calamity.Types.Model.Voice
+import           Calamity.Types.Model.Channel
 import           Calamity.Types.Model.Presence.Activity
 import           Calamity.Types.Snowflake
 
@@ -127,7 +127,7 @@ data SentDiscordMessage
   = StatusUpdate StatusUpdateData
   | Identify IdentifyData
   | HeartBeat (Maybe Int)
-  | VoiceStatusUpdate VoiceState
+  | VoiceStatusUpdate VoiceStateUpdatePayload
   | Resume ResumeData
   | RequestGuildMembers RequestGuildMembersData
   deriving ( Show, Generic )
@@ -209,6 +209,15 @@ data IdentifyData = IdentifyData
   }
   deriving ( Show, Generic )
   deriving ToJSON via CalamityJSON IdentifyData
+
+data VoiceStateUpdatePayload = VoiceStateUpdatePayload
+  { guildID :: Snowflake Guild
+  , channelID :: Snowflake Channel
+  , selfMute :: Bool
+  , selfDeaf :: Bool
+  }
+  deriving ( Show, Generic )
+  deriving ToJSON via CalamityJSON VoiceStateUpdatePayload
 
 data StatusUpdateData = StatusUpdateData
   { since  :: Maybe Integer
