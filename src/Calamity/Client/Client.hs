@@ -7,6 +7,7 @@ module Calamity.Client.Client
     , runBotIO'
     , stopBot
     , sendPresence
+    , sendVoiceConnect
     , events
     , fire
     , waitUntil
@@ -294,6 +295,13 @@ sendPresence s = do
   shards <- P.asks (^. #shards) >>= P.embed . readTVarIO
   for_ shards $ \(inc, _) ->
     P.embed $ writeChan inc (SendPresence s)
+
+-- | Initiate voice connection by sending request to the gateway.
+sendVoiceConnect :: BotC r => VoiceStateUpdatePayload -> P.Sem r ()
+sendVoiceConnect v = do
+  shards <- P.asks (^. #shards) >>= P.embed . readTVarIO
+  for_ shards $ \(inc, _) ->
+    P.embed $ writeChan inc (VoiceConnect v)
 
 -- | Initiate shutting down the bot.
 stopBot :: BotC r => P.Sem r ()

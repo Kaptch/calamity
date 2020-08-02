@@ -285,7 +285,9 @@ shardLoop = do
     SendPresence data' -> do
       debug $ "Sending presence: ("+||data'||+")"
       sendToWs $ StatusUpdate data'
-
+    VoiceConnect data' -> do
+      debug $ "Sending voice connection request: ("+||data'||+")"
+      sendToWs $ VoiceStatusUpdate data'
     RestartShard       -> P.throw ShardFlowRestart
     ShutDownShard      -> P.throw ShardFlowShutDown
 

@@ -261,6 +261,7 @@ data ControlMessage
   = RestartShard
   | ShutDownShard
   | SendPresence StatusUpdateData
+  | VoiceConnect VoiceStateUpdatePayload
   deriving ( Show, Generic )
 
 data ShardFlowControl
