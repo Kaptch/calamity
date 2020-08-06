@@ -121,6 +121,7 @@ library
       Calamity.Types.Model.Voice.VoiceRegion
       Calamity.Types.Model.Voice.VoiceState
       Calamity.Types.Model.Voice.VoiceServer
+      Calamity.Types.Model.Voice.VoiceConnection
       Calamity.Types.Partial
       Calamity.Types.Snowflake
       Calamity.Types.Tellable
@@ -133,6 +134,7 @@ library
       Calamity.Utils.Permissions
       Calamity.Voice
       Calamity.Voice.Types
+      Calamity.Voice.Client
   other-modules:
       Paths_calamity
   hs-source-dirs:
@@ -167,6 +169,7 @@ library
     , megaparsec >=8 && <9
     , mime-types >=0.1 && <0.2
     , mtl >=2.2 && <3
+    , network >=3.0.0.0 && <=3.1.1.1
     , polysemy >=1.3 && <2
     , polysemy-plugin >=0.2 && <0.3
     , reflection >=2.1 && <3

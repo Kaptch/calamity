@@ -1,31 +1,70 @@
 module Calamity.Voice.Types where
 
+import           Calamity.Types.Model.Guild
+import           Calamity.Types.Model.User
+import           Calamity.Types.Snowflake
+
 import           Data.Aeson
 import           Data.Generics.Labels             ()
 import           Data.Text.Lazy
 
 import           GHC.Generics
 
--- TODO
+import           Network.WebSockets (WebSocketsData)
+
 data ReceivedVoiceDiscordMessage
-  = Ready -- 2
-  | SessionDescription -- 4
-  | SpeakingReq -- 5
-  | HeartBeatAck -- 6
-  | Hello Int -- 8
-  | Resumed -- 9
-  | ClientDisconnect -- 13
+  = Ready ReadyData
+  | SessionDescription SessionDescriptionData
+  | SpeakingReq SpeakingData
+  | HeartBeatAck Int
+  | Hello Int
+  | Resumed
+  | ClientDisconnect
   deriving ( Show, Generic )
 
--- TODO
+data ReadyData = ReadyData
+  {
+    ssrc :: Int
+  , ip :: Text
+  , port :: Int
+  , modes :: [Text]
+  }
+  deriving ( Show, Generic, FromJSON )
+
+data Mode = XSALSA20_POLY1305
+  | XSALSA20_POLY1305_SUFFIX
+  | XSALSA20_POLY1305_LITE
+  deriving ( Show, Generic, ToJSON, FromJSON )
+
+data SessionDescriptionData = SessionDescriptionData
+  {
+    mode :: Mode
+  , secret_key :: [Int]
+  }
+  deriving ( Show, Generic, FromJSON )
+
+data SpeakingData = SpeakingData
+  {
+    speaking :: Int
+  , delay :: Int
+  , ssrc :: Int
+  }
+  deriving ( Show, Generic, ToJSON, FromJSON )
+
 instance FromJSON ReceivedVoiceDiscordMessage where
   parseJSON = withObject "ReceivedVoiceDiscordMessage" $ \v -> do
     op :: Int <- v .: "op"
     case op of
-      2  -> pure Ready
-      4  -> pure SessionDescription
-      5  -> pure SpeakingReq
-      6  -> pure HeartBeatAck
+      2  -> Ready <$> do
+        d <- v .: "d"
+        parseJSON d
+      4  -> SessionDescription <$> do
+        d <- v .: "d"
+        parseJSON d
+      5  -> SpeakingReq <$> do
+        d <- v .: "d"
+        parseJSON d
+      6  -> HeartBeatAck <$> v .: "d"
       8  -> Hello <$> do
         d <- v .: "d"
         d .: "heartbeat_interval"
@@ -34,17 +73,17 @@ instance FromJSON ReceivedVoiceDiscordMessage where
       _  -> fail $ "invalid opcode: " <> show op
 
 data SentVoiceDiscordMessage
-  = Identify IdentifyData -- 0
-  | SelectProtocol SelectProtocolData -- 1
-  | HeartBeat (Maybe Int) -- 3
-  | Speaking SpeakingData -- 5
-  | Resume ResumeData -- 7
+  = Identify IdentifyData
+  | SelectProtocol SelectProtocolData
+  | Speaking SpeakingData
+  | HeartBeat (Maybe Int)
+  | Resume ResumeData
   deriving ( Show, Generic )
 
 data IdentifyData = IdentifyData
   {
-    serverID :: Text
-  , userID :: Text
+    serverID :: Snowflake Guild
+  , userID :: Snowflake User
   , sessionID
   , token :: Text
   }
@@ -55,22 +94,15 @@ data SelectProtocolData = SelectProtocolData
     protocol :: Text
   , address :: Text
   , port :: Int
-  , mode :: Text
-  }
-  deriving ( Show, Generic, ToJSON )
-
-data SpeakingData = SpeakingData
-  {
-    speaking :: Int
-  , delay :: Int
+  , mode :: Mode
   }
   deriving ( Show, Generic, ToJSON )
 
 data ResumeData = ResumeData
   {
     token :: Text
-  , serverID :: Text
-  , sessingID :: Text
+  , serverID :: Snowflake Guild
+  , sessionID :: Text
   }
   deriving ( Show, Generic, ToJSON )
 
