@@ -25,6 +25,7 @@ import qualified Data.ByteString.Lazy as BS
 import           Data.IORef
 import           Data.Maybe
 import           Data.Text.Lazy
+import           Data.Void
 
 import           Fmt
 
@@ -161,7 +162,7 @@ outerloop = P.runError . forever $ do
     Nothing -> do
       debug "Something bad happened, restarting voice client"
 
-innerloop :: (VoiceC r, P.Member (P.Error VoiceConnectionControl) r)
+innerloop :: VoiceC r
   => Connection
   -> Sem r VoiceConnectionControl
 innerloop ws = do
@@ -192,7 +193,7 @@ innerloop ws = do
     (\q -> do
         _controlThread <- P.async . P.embed $ controlStream d q
         _discordThread <- P.async . P.embed $ discordStream ws q
-        forever $ do
+        (fromEitherVoid <$>) . P.raise . P.runError . forever $ do
           msg <- P.embed . atomically $ readTBMQueue q
           debug (pack $ show msg)
           case msg of
@@ -205,6 +206,10 @@ innerloop ws = do
   P.atomicModify (#mainWs .~ Nothing)
   stopHb
   pure result
+
+fromEitherVoid :: Either a Void -> a
+fromEitherVoid (Left a) = a
+fromEitherVoid (Right a) = absurd a
 
 handleMsg :: (VoiceC r, P.Member (P.Error VoiceConnectionControl) r)
   => VoiceMsg
