@@ -12,11 +12,12 @@ module Calamity.Client.Types
     , EventHandlers(..)
     , InsertEventHandler(..)
     , RemoveEventHandler(..)
+    , VoiceInitData(..)
     , getEventHandlers
     , getCustomEventHandlers ) where
 
 import           Calamity.Cache.Eff
-import           Calamity.Gateway.DispatchEvents ( CalamityEvent(..), InviteCreateData, InviteDeleteData, ReadyData, VoiceStateUpdateData, VoiceServerUpdateData )
+import           Calamity.Gateway.DispatchEvents ( CalamityEvent(..), InviteCreateData, InviteDeleteData, ReadyData )
 import           Calamity.Gateway.Types          ( ControlMessage )
 import           Calamity.HTTP.Internal.Types
 import           Calamity.Metrics.Eff
@@ -24,10 +25,12 @@ import           Calamity.Types.LogEff
 import           Calamity.Types.Model.Channel
 import           Calamity.Types.Model.Channel.UpdatedMessage
 import           Calamity.Types.Model.Guild
+import           Calamity.Types.Model.Voice
 import           Calamity.Types.Model.User
 import           Calamity.Types.Token
 import           Calamity.Types.UnixTimestamp
 import           Calamity.Types.Snowflake
+import           Calamity.Voice.Client
 
 import           Control.Concurrent.Async
 import           Control.Concurrent.Chan.Unagi
@@ -61,6 +64,9 @@ import TextShow
 data Client = Client
   { shards              :: TVar [(InChan ControlMessage, Async (Maybe ()))]
   , numShards           :: MVar Int
+  , voiceConnections    :: TVar (LH.HashMap (Snowflake Guild)
+                                            (InChan VoiceConnectionControl, Async (Maybe ())))
+  , awaitingVoiceConns  :: TVar (LH.HashMap (Snowflake Guild) VoiceInitData)
   , token               :: Token
   , rlState             :: RateLimitState
   , eventsIn            :: InChan CalamityEvent
@@ -208,8 +214,8 @@ type family EHType (d :: EventType) where
   EHType 'RawMessageReactionRemoveAllEvt = Snowflake Message
   EHType 'TypingStartEvt              = (Channel, Snowflake User, UnixTimestamp)
   EHType 'UserUpdateEvt               = (User, User)
-  EHType 'VoiceStateUpdateEvt         = VoiceStateUpdateData
-  EHType 'VoiceServerUpdateEvt        = VoiceServerUpdateData
+  EHType 'VoiceStateUpdateEvt         = VoiceState
+  EHType 'VoiceServerUpdateEvt        = VoiceServer
   EHType ('CustomEvt s a)             = a
 
 type StoredEHType t = EHType t -> IO ()

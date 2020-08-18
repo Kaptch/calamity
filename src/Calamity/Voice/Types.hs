@@ -10,8 +10,6 @@ import           Data.Text.Lazy
 
 import           GHC.Generics
 
-import           Network.WebSockets (WebSocketsData)
-
 data ReceivedVoiceDiscordMessage
   = Ready ReadyData
   | SessionDescription SessionDescriptionData

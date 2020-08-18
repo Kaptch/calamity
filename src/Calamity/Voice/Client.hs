@@ -3,7 +3,7 @@
 module Calamity.Voice.Client where
 
 import           Calamity.Internal.RunIntoIO
-import           Calamity.Types.Model.Channel
+import           Calamity.Types.Model.Channel.Guild.Voice
 import           Calamity.Types.Model.Guild
 import           Calamity.Types.Model.User
 import           Calamity.Types.Snowflake
@@ -31,7 +31,6 @@ import           Fmt
 import           GHC.Generics
 
 import           Network.WebSockets
--- import           Network.Socket
 
 import           Polysemy
 import qualified Polysemy                      as P
@@ -54,18 +53,13 @@ data VoiceConnectionControl
   deriving ( Show, Generic )
   deriving ( TextShow ) via FromGeneric VoiceConnectionControl
 
-data VoiceConnectionEvent
-  = VoiceConnectionEvent
-  deriving ( Show, Generic )
-  deriving ( TextShow ) via FromGeneric VoiceConnectionEvent
-
 data VoiceMsg
   = Discord ReceivedVoiceDiscordMessage
   | Control VoiceConnectionControl
   deriving ( Show, Generic )
 
 data VoiceConnectionState = VoiceConnectionState
-  { channelID  :: Snowflake Channel
+  { channelID  :: Snowflake VoiceChannel
   , mute       :: Bool
   , deaf       :: Bool
   
@@ -83,16 +77,15 @@ data VoiceConnectionState = VoiceConnectionState
 data VoiceConnection = VoiceConnection
   { guildID    :: Snowflake Guild
   , userID     :: Snowflake User
-  , eventIn    :: InChan VoiceConnectionEvent
   , cmdOut     :: OutChan VoiceConnectionControl
   }
   deriving ( Generic )
 
 type VoiceC r = (P.Members '[ LogEff, P.Reader VoiceConnection
                             , P.AtomicState VoiceConnectionState
-                            , P.Embed IO, P.Final IO, P.Async] r)
+                            , P.Embed IO, P.Final IO, P.Async ] r)
 
-newVoiceConnectionState :: Snowflake Channel
+newVoiceConnectionState :: Snowflake VoiceChannel
   -> Bool
   -> Bool
   -> Text
@@ -103,22 +96,24 @@ newVoiceConnectionState chID mute deaf sessionID token endpoint =
   VoiceConnectionState chID mute deaf sessionID token endpoint
     Nothing False Nothing Nothing
 
-newVoiceConnection :: VoiceC r
+newVoiceConnection :: (P.Members '[ LogEff
+                                  , P.Embed IO
+                                  , P.Final IO
+                                  , P.Async ] r)
   => Snowflake Guild
   -> Snowflake User
-  -> Snowflake Channel
+  -> Snowflake VoiceChannel
   -> Bool
   -> Bool
   -> Text
   -> Text
   -> Text
-  -> InChan VoiceConnectionEvent
   -> Sem r (UC.InChan VoiceConnectionControl, Async (Maybe ()))
-newVoiceConnection gID uID cID mute deaf sessionID token endpoint evtIn = do
+newVoiceConnection gID uID cID mute deaf sessionID token endpoint = do
   (cmdIn, cmdOut) <- P.embed UC.newChan
   initSt <- P.embed . newIORef $
     newVoiceConnectionState cID mute deaf sessionID token endpoint
-  let d = VoiceConnection gID uID evtIn cmdOut
+  let d = VoiceConnection gID uID cmdOut
   thread <- P.async $
     P.runReader d $
     P.runAtomicStateIORef initSt (void outerloop)
@@ -138,7 +133,7 @@ sendToWs :: VoiceC r => SentVoiceDiscordMessage
 sendToWs data' = do
   st <- P.atomicGet
   let encodedData = encode data'
-  debug $ "sending " +|| data' ||+ " encoded to " +|| encodedData ||+ " to gateway"
+  debug $ "sending " +|| data' ||+ " encoded to " +|| encodedData ||+ " to voice server"
   case (st ^. #mainWs) of
     Nothing -> do
       debug "attempted to send to a closed ws"
@@ -194,6 +189,7 @@ innerloop ws = do
         _discordThread <- P.async . P.embed $ discordStream ws q
         forever $ do
           msg <- P.embed . atomically $ readTBMQueue q
+          debug (pack $ show msg)
           case msg of
             Nothing -> pure ()
             Just msg -> handleMsg msg
@@ -242,7 +238,6 @@ controlStream conn outqueue = do
       Just False -> retry
   when r (controlStream conn outqueue)
 
--- TODO
 discordStream :: Connection -> TBMQueue VoiceMsg -> IO ()
 discordStream conn outqueue = do
   msg :: Either SomeException BS.ByteString <-

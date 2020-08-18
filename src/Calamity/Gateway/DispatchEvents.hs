@@ -71,8 +71,8 @@ data DispatchData
   | PresenceUpdate PresenceUpdateData
   | TypingStart TypingStartData
   | UserUpdate User
-  | VoiceStateUpdate VoiceStateUpdateData
-  | VoiceServerUpdate VoiceServerUpdateData
+  | VoiceStateUpdate VoiceState
+  | VoiceServerUpdate VoiceServer
   | WebhooksUpdate WebhooksUpdateData
   deriving ( Show, Generic, CtorName )
 
@@ -223,14 +223,6 @@ data TypingStartData = TypingStartData
   }
   deriving ( Show, Generic )
   deriving FromJSON via CalamityJSON TypingStartData
-
-data VoiceStateUpdateData = VoiceStateUpdateData VoiceState
-  deriving ( Show, Generic )
-  deriving ( ToJSON, FromJSON )
-
-data VoiceServerUpdateData = VoiceServerUpdateData VoiceServer
-  deriving ( Show, Generic )
-  deriving ( ToJSON, FromJSON )
 
 newtype WebhooksUpdateData = WebhooksUpdateData Value
   deriving newtype ( Show, Generic )

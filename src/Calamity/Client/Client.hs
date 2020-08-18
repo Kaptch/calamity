@@ -31,9 +31,11 @@ import           Calamity.Metrics.Eff
 import           Calamity.Types.Model.Channel
 import           Calamity.Types.Model.Guild
 import           Calamity.Types.Model.Presence     ( Presence(..) )
+import           Calamity.Types.Model.Voice
 import           Calamity.Types.Model.User
 import           Calamity.Types.Snowflake
 import           Calamity.Types.Token
+import           Calamity.Voice.Client
 
 import           Control.Concurrent.Chan.Unagi
 import           Control.Concurrent.MVar
@@ -46,6 +48,7 @@ import           Data.Default.Class
 import           Data.Dynamic
 import           Data.Foldable
 import           Data.Generics.Product.Subtype
+import qualified Data.HashMap.Lazy                 as LH
 import           Data.IORef
 import           Data.Maybe
 import           Data.Proxy
@@ -82,12 +85,16 @@ newClient :: Token -> Session -> IO Client
 newClient token session = do
   shards'        <- newTVarIO []
   numShards'     <- newEmptyMVar
+  voiceConns     <- newTVarIO LH.empty
+  awaitingVCs    <- newTVarIO LH.empty
   rlState'       <- newRateLimitState
   (inc, outc)    <- newChan
   ehidCounter    <- newIORef 0
 
   pure $ Client shards'
                 numShards'
+                voiceConns
+                awaitingVCs
                 token
                 rlState'
                 inc
@@ -296,10 +303,16 @@ sendPresence s = do
   for_ shards $ \(inc, _) ->
     P.embed $ writeChan inc (SendPresence s)
 
+-- TODO: handle existing voice connections
 -- | Initiate voice connection by sending request to the gateway.
 sendVoiceConnect :: BotC r => VoiceStateUpdatePayload -> P.Sem r ()
 sendVoiceConnect v = do
   shards <- P.asks (^. #shards) >>= P.embed . readTVarIO
+  awaitingVoiceConns <- P.asks (^. #awaitingVoiceConns)
+  P.embed . atomically $
+    modifyTVar awaitingVoiceConns (LH.insert (v ^. #guildID)
+                                  (VoiceInitData { voiceServer = Nothing,
+                                                   voiceState = Nothing }))
   for_ shards $ \(inc, _) ->
     P.embed $ writeChan inc (VoiceConnect v)
 
@@ -348,6 +361,38 @@ catchAllLogging m = do
   case r of
     Right _ -> pure ()
     Left e -> debug $ "got exception: " +|| e ||+ ""
+
+handleVoiceEvent :: BotC r
+  => Snowflake Guild
+  -> Maybe VoiceState
+  -> Maybe VoiceServer
+  -> P.Sem r ()
+handleVoiceEvent gID mSt mSrv = do
+  aVCs <- P.asks (^. #awaitingVoiceConns)
+  when (isJust mSt) $ do
+    P.embed . atomically . modifyTVar aVCs $
+      LH.adjust (\vid -> vid & #voiceState .~ mSt) gID
+  when (isJust mSrv) $ do
+    P.embed . atomically . modifyTVar aVCs $
+      LH.adjust (\vid -> vid & #voiceServer .~ mSrv) gID
+  mVid <- P.embed (LH.lookup gID <$> readTVarIO aVCs)
+  case mVid of
+    Nothing -> pure ()
+    Just entry -> case entry of
+      VoiceInitData { voiceState = Just vState, voiceServer = Just vServer } -> do
+        P.embed . atomically . modifyTVar aVCs $ LH.delete gID
+        let (Just chID) = vState ^. #channelID
+        vConn <- newVoiceConnection gID
+          (vState ^. #userID)
+          chID
+          (vState ^. #mute)
+          (vState ^. #deaf)
+          (vState ^. #sessionID)
+          (vServer ^. #token)
+          (vServer ^. #endpoint)
+        vConns <- P.asks (^. #voiceConnections)
+        P.embed . atomically $ modifyTVar vConns (LH.insert gID vConn)
+      _ -> pure ()
 
 handleEvent :: BotC r => Int -> DispatchData -> P.Sem r ()
 handleEvent shardID data' = do
@@ -605,9 +650,17 @@ handleEvent' eh evt@(UserUpdate _) = do
   pure $ map ($ (oldUser, newUser)) (getEventHandlers @'UserUpdateEvt eh)
 
 handleEvent' eh (VoiceStateUpdate d) = do
+  case d ^. #guildID of
+    Nothing -> pure ()
+    Just gID -> do
+      usr <- getBotUser
+      when (Just (d ^. #userID) == (getID <$> usr)) $
+        handleVoiceEvent gID (Just d) Nothing
   pure $ map ($ d) (getEventHandlers @'VoiceStateUpdateEvt eh)
 
 handleEvent' eh (VoiceServerUpdate d) = do
+  let gID = d ^. #guildID
+  handleVoiceEvent gID Nothing (Just d)
   pure $ map ($ d) (getEventHandlers @'VoiceServerUpdateEvt eh)
 
 handleEvent' _ e = fail $ "Unhandled event: " <> show e
