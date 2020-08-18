@@ -120,14 +120,16 @@ newVoiceConnection gID uID cID mute deaf sessionID token endpoint = do
     P.runAtomicStateIORef initSt (void outerloop)
   pure (cmdIn, thread)
 
-runWebsocket :: Members '[P.Final IO, P.Embed IO] r
+runWebsocket :: Members '[ LogEff, P.Final IO, P.Embed IO ] r
   => Text
   -> Text
   -> PortNumber
   -> (Connection -> P.Sem r a)
   -> P.Sem r (Maybe a)
 runWebsocket host path port ma = do
+  debug "Starting secure ws client"
   inner <- bindSemToIO ma
+  debug "Running inner loop"
   embed $ runSecureClient (unpack host) port (unpack path) inner
 
 sendToWs :: VoiceC r => SentVoiceDiscordMessage
@@ -142,7 +144,6 @@ sendToWs data' = do
     Just conn -> do
       P.embed . sendTextData conn $ encodedData
 
--- TODO: handle port number
 outerloop :: VoiceC r => Sem r (Either VoiceConnectionControl ())
 outerloop = P.runError . forever $ do
   st <- P.atomicGet

@@ -372,9 +372,11 @@ handleVoiceEvent gID mSt mSrv = do
   when (isJust mSt) $ do
     P.embed . atomically . modifyTVar aVCs $
       LH.adjust (\vid -> vid & #voiceState .~ mSt) gID
+    debug "Registering a voice state update"
   when (isJust mSrv) $ do
     P.embed . atomically . modifyTVar aVCs $
       LH.adjust (\vid -> vid & #voiceServer .~ mSrv) gID
+    debug "Registering a voice server update"
   mVid <- P.embed (LH.lookup gID <$> readTVarIO aVCs)
   case mVid of
     Nothing -> pure ()
@@ -382,6 +384,7 @@ handleVoiceEvent gID mSt mSrv = do
       VoiceInitData { voiceState = Just vState, voiceServer = Just vServer } -> do
         P.embed . atomically . modifyTVar aVCs $ LH.delete gID
         let (Just chID) = vState ^. #channelID
+        debug "Initiating new voice connection"
         vConn <- newVoiceConnection gID
           (vState ^. #userID)
           chID
