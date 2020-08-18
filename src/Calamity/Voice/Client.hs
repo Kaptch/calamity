@@ -150,7 +150,7 @@ outerloop = P.runError . forever $ do
   let host' = fromMaybe host $ stripPrefix "wss://" host
   let host'' = fromMaybe host' $ stripSuffix ":80" host'
   debug $ "Starting new voice connection to " +|| host'' ||+""
-  innerLoopVal <- runWebsocket host'' "" 80 innerloop
+  innerLoopVal <- runWebsocket host'' "/" 80 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
       debug "Restarting voice client"
