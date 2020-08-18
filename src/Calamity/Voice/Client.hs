@@ -30,6 +30,7 @@ import           Fmt
 
 import           GHC.Generics
 
+import           Network.Socket (PortNumber(..))
 import           Network.WebSockets
 
 import           Polysemy
@@ -122,45 +123,48 @@ newVoiceConnection gID uID cID mute deaf sessionID token endpoint = do
 runWebsocket :: Members '[P.Final IO, P.Embed IO] r
   => Text
   -> Text
+  -> PortNumber
   -> (Connection -> P.Sem r a)
   -> P.Sem r (Maybe a)
-runWebsocket host path ma = do
+runWebsocket host path port ma = do
   inner <- bindSemToIO ma
-  embed $ runSecureClient (unpack host) 443 (unpack path) inner
+  embed $ runSecureClient (unpack host) port (unpack path) inner
 
 sendToWs :: VoiceC r => SentVoiceDiscordMessage
   -> Sem r ()
 sendToWs data' = do
   st <- P.atomicGet
   let encodedData = encode data'
-  debug $ "sending " +|| data' ||+ " encoded to " +|| encodedData ||+ " to voice server"
+  debug $ "Sending " +|| data' ||+ " encoded to " +|| encodedData ||+ " to voice server"
   case (st ^. #mainWs) of
     Nothing -> do
-      debug "attempted to send to a closed ws"
+      debug "Attempted to send to a closed ws"
     Just conn -> do
       P.embed . sendTextData conn $ encodedData
 
+-- TODO: handle port number
 outerloop :: VoiceC r => Sem r (Either VoiceConnectionControl ())
 outerloop = P.runError . forever $ do
   st <- P.atomicGet
   let host = st ^. #endpoint
   let host' = fromMaybe host $ stripPrefix "wss://" host
-  debug $ "starting new voice connection to " +|| host' ||+""
-  innerLoopVal <- runWebsocket host' "?v=4&encoding=json" innerloop
+  let host'' = Data.Text.Lazy.dropWhileEnd (== ':') host'
+  debug $ "Starting new voice connection to " +|| host' ||+""
+  innerLoopVal <- runWebsocket host'' "?v=4&encoding=json" 80 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
-      debug "restarting voice client"
+      debug "Restarting voice client"
     Just VoiceConnectionShutDown -> do
-      debug "shutting down voice client"
+      debug "Shutting down voice client"
       P.throw VoiceConnectionShutDown
     Nothing -> do
-      debug "something bad happened, restarting voice client"
+      debug "Something bad happened, restarting voice client"
 
 innerloop :: (VoiceC r, P.Member (P.Error VoiceConnectionControl) r)
   => Connection
   -> Sem r VoiceConnectionControl
 innerloop ws = do
-  debug "inner loop of a voice client"
+  debug "Entering inner loop of a voice connection"
   
   P.atomicModify (#mainWs ?~ ws)
   
@@ -195,7 +199,7 @@ innerloop ws = do
             Just msg -> handleMsg msg
     )
 
-  debug "Exiting inner loop of a voice client"
+  debug "Exiting inner loop of a voice connection"
 
   P.atomicModify (#mainWs .~ Nothing)
   stopHb

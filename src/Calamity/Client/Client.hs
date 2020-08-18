@@ -303,7 +303,6 @@ sendPresence s = do
   for_ shards $ \(inc, _) ->
     P.embed $ writeChan inc (SendPresence s)
 
--- TODO: handle existing voice connections
 -- | Initiate voice connection by sending request to the gateway.
 sendVoiceConnect :: BotC r => VoiceStateUpdatePayload -> P.Sem r ()
 sendVoiceConnect v = do
@@ -362,6 +361,7 @@ catchAllLogging m = do
     Right _ -> pure ()
     Left e -> debug $ "got exception: " +|| e ||+ ""
 
+-- TODO: handle voice server events for existing voice connections
 handleVoiceEvent :: BotC r
   => Snowflake Guild
   -> Maybe VoiceState
