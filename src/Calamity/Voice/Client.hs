@@ -30,7 +30,7 @@ import           Fmt
 
 import           GHC.Generics
 
-import           Network.Socket (PortNumber(..))
+import           Network.Socket (PortNumber)
 import           Network.WebSockets
 
 import           Polysemy
@@ -148,8 +148,8 @@ outerloop = P.runError . forever $ do
   st <- P.atomicGet
   let host = st ^. #endpoint
   let host' = fromMaybe host $ stripPrefix "wss://" host
-  let host'' = Data.Text.Lazy.dropWhileEnd (== ':') host'
-  debug $ "Starting new voice connection to " +|| host' ||+ " " +|| host'' ||+""
+  let host'' = fromMaybe host' $ stripSuffix ":80" host'
+  debug $ "Starting new voice connection to " +|| host'' ||+""
   innerLoopVal <- runWebsocket host'' "" 80 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
