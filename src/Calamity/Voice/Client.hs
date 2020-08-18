@@ -149,7 +149,7 @@ outerloop = P.runError . forever $ do
   let host = st ^. #endpoint
   let host' = fromMaybe host $ stripPrefix "wss://" host
   let host'' = Data.Text.Lazy.dropWhileEnd (== ':') host'
-  debug $ "Starting new voice connection to " +|| host'' ||+""
+  debug $ "Starting new voice connection to " +|| host' ||+ " " +|| host'' ||+""
   innerLoopVal <- runWebsocket host'' "" 80 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
