@@ -196,6 +196,7 @@ innerloop ws = do
       sendToWs (Resume $ ResumeData token gID sessionID)
     True -> do
       debug "Idenifying voice connection"
+      P.atomicModify (#initial .~ False)
       sendToWs (Identify $ IdentifyData gID uID sessionID token)
 
   d <- P.ask
@@ -222,27 +223,28 @@ fromEitherVoid (Left a) = a
 fromEitherVoid (Right a) = absurd a
 
 handleWSException :: SomeException -> IO (Either (VoiceConnectionControl, Maybe Text) a)
-handleWSException e = pure $ case fromException e of
+handleWSException e = case fromException e of
   Just (CloseRequest code _ )
-    | code `elem` [1000, 4004, 4009, 4011, 4014] ->
-      Left (VoiceConnectionShutDown, Nothing)
-  e -> Left (VoiceConnectionRestart, Just . pack . show $ e)
+    | code `elem` [1000, 4004, 4009, 4011, 4014] -> do
+      pure $ Left (VoiceConnectionShutDown, Nothing)
+    | code `elem` [4006] -> do
+      threadDelay (15 * 1000 * 1000)
+      pure $ Left (VoiceConnectionRestart, Nothing)
+  e -> do
+    pure $ Left (VoiceConnectionRestart, Just . pack . show $ e)
 
 handleMsg :: (VoiceC r, P.Member (P.Error VoiceConnectionControl) r)
   => VoiceMsg
   -> Sem r ()
 handleMsg (Discord msg) = case msg of
   Ready data' -> do
-    P.atomicModify (#initial .~ False)
     P.atomicModify (#ssrc ?~ (data' ^. #ssrc))
     P.atomicModify (#ip ?~ (data' ^. #ip))
     P.atomicModify (#port ?~ (data' ^. #port))
     P.atomicModify (#modes ?~ (data' ^. #modes))
-    -- TODO: notify client
   SessionDescription data' -> do
     P.atomicModify (#mode ?~ (data' ^. #mode))
     P.atomicModify (#secretKey ?~ (data' ^. #secret_key))
-    -- TODO: notify client
   SpeakingReq data' -> do
     debug . pack . show $ data'
   HeartBeatAck receivedNonce -> do
@@ -333,7 +335,6 @@ hbLoop interval = void . P.runError . forever $ do
   sendHb
   P.embed . threadDelay $ interval * 1000
   unlessM (P.atomicGets (^. #hbResponse)) $ do
-    -- TODO: handle severed ws connection with Resume
     debug "No heartbeat ACK, restarting voice connection"
     mainWs <- P.note () =<< P.atomicGets (^. #mainWs)
     P.embed $ sendCloseCode mainWs 4000 ("No heartbeat in time" :: Text)
