@@ -44,6 +44,8 @@ import qualified Polysemy.Resource             as P
 
 import           Prelude                       hiding (error, lookup)
 
+import           System.Random (random, getStdRandom)
+
 import           Wuss
 
 import TextShow.Generic
@@ -68,10 +70,11 @@ data VoiceConnectionState = VoiceConnectionState
   , sessionID  :: Text
   , token      :: Text
   , endpoint   :: Text
+
+  , init       :: Maybe ()
   
   , hbThread   :: Maybe (Async (Maybe ()))
   , hbResponse :: Bool
-  , seqNum     :: Maybe Int
   , mainWs     :: Maybe Connection
   }
   deriving ( Generic )
@@ -96,7 +99,7 @@ newVoiceConnectionState :: Snowflake VoiceChannel
   -> VoiceConnectionState
 newVoiceConnectionState chID mute deaf sessionID token endpoint =
   VoiceConnectionState chID mute deaf sessionID token endpoint
-    Nothing False Nothing Nothing
+    Nothing Nothing False Nothing
 
 newVoiceConnection :: (P.Members '[ LogEff
                                   , P.Embed IO
@@ -170,18 +173,16 @@ innerloop ws = do
   
   P.atomicModify (#mainWs ?~ ws)
   
-  seqNum <- P.atomicGets (^. #seqNum)
   gID <- P.asks (^. #guildID)
   uID <- P.asks (^. #userID)
   sessionID <- P.atomicGets (^. #sessionID)
   token <- P.atomicGets (^. #token)
+  initial <- P.atomicGets (^. #init)
   
-  case seqNum of
-    Just n -> do
+  case initial of
+    Just _ -> do
       debug $
-        "Resuming voice connection (sessionID: " +| sessionID
-        |+ ", seq: " +| n
-        |+ ")"
+        "Resuming voice connection (sessionID: " +| sessionID |+ ")"
       sendToWs (Resume $ ResumeData token gID sessionID)
     Nothing -> do
       debug "Idenifying voice connection"
@@ -225,7 +226,7 @@ handleMsg (Discord msg) = case msg of
     debug "Received heartbeat voice client ack"
     P.atomicModify (#hbResponse .~ True)
   Hello i -> do
-    debug $ "Received hello with " +| i |+ " ms"
+    debug $ "Received hello (interval: " +| i |+ ")"
     startHb i
   Resumed ->
     debug "Resumed"
@@ -252,6 +253,8 @@ discordStream :: Connection -> TBMQueue VoiceMsg -> IO ()
 discordStream conn outqueue = do
   msg :: Either SomeException BS.ByteString <-
     catchAny (Right <$> receiveData conn) (\ex -> pure $ Left ex)
+  -- TOREMOVE
+  print msg
   case msg of
     Left _ -> do
       atomically $ writeTBMQueue outqueue (Control VoiceConnectionRestart)
@@ -273,7 +276,7 @@ stopHb :: VoiceC r => Sem r ()
 stopHb = do
   st <- P.atomicGet
   case (st ^. #hbThread) of
-    Nothing ->
+    Nothing -> do
       pure ()
     Just thread -> do
       P.embed (void $ cancel thread)
@@ -282,10 +285,9 @@ stopHb = do
 
 sendHb :: VoiceC r => Sem r ()
 sendHb = do
-  st <- P.atomicGet
-  let sn = st ^. #seqNum
-  debug $ "Sending heartbeat (seq: " +|| sn ||+ ")"
-  sendToWs $ HeartBeat sn
+  nonce <- P.embed $ getStdRandom random
+  debug $ "Sending heartbeat (nonce: " +| nonce |+ ")"
+  sendToWs $ HeartBeat (Just nonce)
   P.atomicModify (#hbResponse .~ False)
 
 hbLoop :: VoiceC r => Int -> Sem r ()
