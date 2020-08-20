@@ -132,7 +132,6 @@ newVoiceConnection gID uID cID mute deaf sessionID token endpoint = do
         P.runAtomicStateIORef initSt (void outerloop)
   let action = push "calamity-voice-connection" $
         attr "guild_id" (showtl gID) $
-        attr "channel_id" (showtl cID) $
         runVoiceConnection
   thread <- P.async action
   pure (cmdIn, thread)
@@ -225,7 +224,7 @@ fromEitherVoid (Right a) = absurd a
 handleWSException :: SomeException -> IO (Either (VoiceConnectionControl, Maybe Text) a)
 handleWSException e = pure $ case fromException e of
   Just (CloseRequest code _ )
-    | code `elem` [1000, 4004, 4006, 4009, 4011, 4014] ->
+    | code `elem` [1000, 4004, 4009, 4011, 4014] ->
       Left (VoiceConnectionShutDown, Nothing)
   e -> Left (VoiceConnectionRestart, Just . pack . show $ e)
 
@@ -290,6 +289,7 @@ discordStream :: VoiceC r
   => Connection -> TBMQueue VoiceMsg -> Sem r ()
 discordStream conn outqueue = do
   msg <- P.embed $ catchAny (Right <$> receiveData conn) handleWSException
+  debug $ "Received a message: " +|| msg ||+ ""
   case msg of
     Left (c, _) -> do
       P.embed . atomically $ writeTBMQueue outqueue (Control c)
