@@ -44,7 +44,7 @@ import qualified Polysemy.Resource             as P
 
 import           Prelude                       hiding (error, lookup)
 
-import           System.Random (random, getStdRandom)
+import           System.Random (randomR, getStdRandom)
 
 import           Wuss
 
@@ -285,7 +285,7 @@ stopHb = do
 
 sendHb :: VoiceC r => Sem r ()
 sendHb = do
-  nonce <- P.embed $ getStdRandom random
+  nonce <- P.embed $ getStdRandom (randomR (1, 2147483647))
   debug $ "Sending heartbeat (nonce: " +| nonce |+ ")"
   sendToWs $ HeartBeat (Just nonce)
   P.atomicModify (#hbResponse .~ False)
