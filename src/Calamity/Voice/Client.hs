@@ -71,7 +71,7 @@ data VoiceConnectionState = VoiceConnectionState
   , token      :: Text
   , endpoint   :: Text
 
-  , init       :: Maybe ()
+  , nonce      :: Maybe Int
   
   , hbThread   :: Maybe (Async (Maybe ()))
   , hbResponse :: Bool
@@ -177,7 +177,7 @@ innerloop ws = do
   uID <- P.asks (^. #userID)
   sessionID <- P.atomicGets (^. #sessionID)
   token <- P.atomicGets (^. #token)
-  initial <- P.atomicGets (^. #init)
+  initial <- P.atomicGets (^. #nonce)
   
   case initial of
     Just _ -> do
@@ -233,9 +233,10 @@ handleMsg (Discord msg) = case msg of
   ClientDisconnect ->
     debug "Client disconnected"
 handleMsg (Control msg) = case msg of
-  VoiceConnectionRestart ->
+  VoiceConnectionRestart -> do
+    P.atomicModify (#nonce .~ Nothing)
     P.throw VoiceConnectionRestart
-  VoiceConnectionShutDown ->
+  VoiceConnectionShutDown -> do
     P.throw VoiceConnectionShutDown
 
 controlStream :: VoiceConnection -> TBMQueue VoiceMsg -> IO ()
@@ -286,6 +287,7 @@ stopHb = do
 sendHb :: VoiceC r => Sem r ()
 sendHb = do
   nonce <- P.embed $ getStdRandom (randomR (1, 2147483647))
+  P.atomicModify (#nonce ?~ nonce)
   debug $ "Sending heartbeat (nonce: " +| nonce |+ ")"
   sendToWs $ HeartBeat (Just nonce)
   P.atomicModify (#hbResponse .~ False)
