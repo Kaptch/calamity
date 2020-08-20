@@ -224,11 +224,10 @@ fromEitherVoid (Right a) = absurd a
 
 handleWSException :: SomeException -> IO (Either (VoiceConnectionControl, Maybe Text) a)
 handleWSException e = case fromException e of
-  Just (CloseRequest code _ )
+  Just (CloseRequest code _)
     | code `elem` [1000, 4004, 4009, 4011, 4014] -> do
       pure $ Left (VoiceConnectionShutDown, Nothing)
     | code `elem` [4006] -> do
-      threadDelay (15 * 1000 * 1000)
       pure $ Left (VoiceConnectionRestart, Nothing)
   e -> do
     pure $ Left (VoiceConnectionRestart, Just . pack . show $ e)
@@ -256,6 +255,7 @@ handleMsg (Discord msg) = case msg of
         P.throw VoiceConnectionRestart
       Just savedNonce -> do
         when (savedNonce == receivedNonce) $ do
+          debug "Nonce conflict"
           P.throw VoiceConnectionRestart
   Hello i -> do
     debug $ "Received hello (interval: " +|| i ||+ ")"
