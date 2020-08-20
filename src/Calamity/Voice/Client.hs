@@ -140,12 +140,12 @@ runWebsocket :: Members '[ P.Embed IO
                          , P.Final IO ] r
   => Text
   -> Text
-  -> PortNumber
+  -> Int
   -> (Connection -> P.Sem r a)
   -> P.Sem r (Maybe a)
 runWebsocket host path port ma = do
   inner <- bindSemToIO ma
-  embed $ runSecureClient (unpack host) port (unpack path) inner
+  embed $ runClient (unpack host) port (unpack path) inner
 
 sendToWs :: VoiceC r => SentVoiceDiscordMessage
   -> Sem r ()
@@ -163,9 +163,8 @@ outerloop :: VoiceC r => Sem r (Either VoiceConnectionControl ())
 outerloop = P.runError . forever $ do
   st <- P.atomicGet
   let host = st ^. #endpoint
-  let host' = fromMaybe host $ stripPrefix "wss://" host
-  let host'' = fromMaybe host' $ stripSuffix ":80" host'
-  innerLoopVal <- runWebsocket host'' "/?v=4" 443 innerloop
+  let host' = fromMaybe host $ stripPrefix "ws://" host
+  innerLoopVal <- runWebsocket host' "/?v=4" 80 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
       debug "Restarting voice client"
@@ -227,8 +226,6 @@ handleWSException e = case fromException e of
   Just (CloseRequest code _)
     | code `elem` [1000, 4004, 4009, 4011, 4014] -> do
       pure $ Left (VoiceConnectionShutDown, Nothing)
-    | code `elem` [4006] -> do
-      pure $ Left (VoiceConnectionRestart, Nothing)
   e -> do
     pure $ Left (VoiceConnectionRestart, Just . pack . show $ e)
 
