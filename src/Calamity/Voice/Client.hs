@@ -21,11 +21,12 @@ import           Control.Monad
 import           Control.Monad.STM
 
 import           Data.Aeson
-import qualified Data.ByteString.Lazy as BS
 import           Data.IORef
 import           Data.Maybe
 import           Data.Text.Lazy
 import           Data.Void
+
+import           DiPolysemy                      hiding ( debug, error, info )
 
 import           Fmt
 
@@ -43,13 +44,11 @@ import qualified Polysemy.Error                as P
 import qualified Polysemy.Resource             as P
 
 import           Prelude                       hiding (error, lookup)
-
-import           System.Random (randomR, getStdRandom)
+import           TextShow.Generic
+import           TextShow                      (TextShow, showtl)
+import           System.Random                 (random, getStdRandom)
 
 import           Wuss
-
-import TextShow.Generic
-import TextShow (TextShow)
 
 data VoiceConnectionControl
   = VoiceConnectionRestart
@@ -66,16 +65,21 @@ data VoiceConnectionState = VoiceConnectionState
   { channelID  :: Snowflake VoiceChannel
   , mute       :: Bool
   , deaf       :: Bool
-  
   , sessionID  :: Text
   , token      :: Text
   , endpoint   :: Text
-
   , nonce      :: Maybe Int
-  
+  , initial    :: Bool
   , hbThread   :: Maybe (Async (Maybe ()))
   , hbResponse :: Bool
   , mainWs     :: Maybe Connection
+  -- TODO: refactor
+  , ssrc       :: Maybe Int
+  , ip         :: Maybe Text
+  , port       :: Maybe Int
+  , modes      :: Maybe [Mode]
+  , mode       :: Maybe Mode
+  , secretKey  :: Maybe [Int]
   }
   deriving ( Generic )
 
@@ -86,9 +90,12 @@ data VoiceConnection = VoiceConnection
   }
   deriving ( Generic )
 
-type VoiceC r = (P.Members '[ LogEff, P.Reader VoiceConnection
-                            , P.AtomicState VoiceConnectionState
-                            , P.Embed IO, P.Final IO, P.Async ] r)
+type VoiceC r = (P.Members '[ LogEff
+                            , P.Embed IO
+                            , P.Final IO
+                            , P.Async
+                            , P.Reader VoiceConnection
+                            , P.AtomicState VoiceConnectionState ] r)
 
 newVoiceConnectionState :: Snowflake VoiceChannel
   -> Bool
@@ -99,7 +106,8 @@ newVoiceConnectionState :: Snowflake VoiceChannel
   -> VoiceConnectionState
 newVoiceConnectionState chID mute deaf sessionID token endpoint =
   VoiceConnectionState chID mute deaf sessionID token endpoint
-    Nothing Nothing False Nothing
+    Nothing True Nothing False Nothing Nothing
+    Nothing Nothing Nothing Nothing Nothing
 
 newVoiceConnection :: (P.Members '[ LogEff
                                   , P.Embed IO
@@ -119,21 +127,25 @@ newVoiceConnection gID uID cID mute deaf sessionID token endpoint = do
   initSt <- P.embed . newIORef $
     newVoiceConnectionState cID mute deaf sessionID token endpoint
   let d = VoiceConnection gID uID cmdOut
-  thread <- P.async $
-    P.runReader d $
-    P.runAtomicStateIORef initSt (void outerloop)
+  let runVoiceConnection =
+        P.runReader d $
+        P.runAtomicStateIORef initSt (void outerloop)
+  let action = push "calamity-voice-connection" $
+        attr "guild_id" (showtl gID) $
+        attr "channel_id" (showtl cID) $
+        runVoiceConnection
+  thread <- P.async action
   pure (cmdIn, thread)
 
-runWebsocket :: Members '[ LogEff, P.Final IO, P.Embed IO ] r
+runWebsocket :: Members '[ P.Embed IO
+                         , P.Final IO ] r
   => Text
   -> Text
   -> PortNumber
   -> (Connection -> P.Sem r a)
   -> P.Sem r (Maybe a)
 runWebsocket host path port ma = do
-  debug "Starting secure ws client"
   inner <- bindSemToIO ma
-  debug "Running inner loop"
   embed $ runSecureClient (unpack host) port (unpack path) inner
 
 sendToWs :: VoiceC r => SentVoiceDiscordMessage
@@ -154,7 +166,6 @@ outerloop = P.runError . forever $ do
   let host = st ^. #endpoint
   let host' = fromMaybe host $ stripPrefix "wss://" host
   let host'' = fromMaybe host' $ stripSuffix ":80" host'
-  debug $ "Starting new voice connection to " +|| host'' ||+ ""
   innerLoopVal <- runWebsocket host'' "/?v=4" 443 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
@@ -177,23 +188,24 @@ innerloop ws = do
   uID <- P.asks (^. #userID)
   sessionID <- P.atomicGets (^. #sessionID)
   token <- P.atomicGets (^. #token)
-  initial <- P.atomicGets (^. #nonce)
+  initial <- P.atomicGets (^. #initial)
   
   case initial of
-    Just _ -> do
+    False -> do
       debug $
-        "Resuming voice connection (sessionID: " +| sessionID |+ ")"
+        "Resuming voice connection (sessionID: " +|| sessionID ||+ ")"
       sendToWs (Resume $ ResumeData token gID sessionID)
-    Nothing -> do
+    True -> do
       debug "Idenifying voice connection"
       sendToWs (Identify $ IdentifyData gID uID sessionID token)
 
   d <- P.ask
+  
   result <- P.resourceToIOFinal $ P.bracket (P.embed $ newTBMQueueIO 1)
     (P.embed . atomically . closeTBMQueue)
     (\q -> do
-        _controlThread <- P.async . P.embed $ controlStream d q
-        _discordThread <- P.async . P.embed $ discordStream ws q
+        _controlThread <- P.async $ controlStream d q
+        _discordThread <- P.async $ discordStream ws q
         (fromEitherVoid <$>) . P.raise . P.runError . forever $ do
           msg <- P.embed . atomically $ readTBMQueue q
           debug (pack $ show msg)
@@ -201,8 +213,6 @@ innerloop ws = do
             Nothing -> pure ()
             Just msg -> handleMsg msg
     )
-
-  debug "Exiting inner loop of a voice connection"
 
   P.atomicModify (#mainWs .~ Nothing)
   stopHb
@@ -212,65 +222,92 @@ fromEitherVoid :: Either a Void -> a
 fromEitherVoid (Left a) = a
 fromEitherVoid (Right a) = absurd a
 
+handleWSException :: SomeException -> IO (Either (VoiceConnectionControl, Maybe Text) a)
+handleWSException e = pure $ case fromException e of
+  Just (CloseRequest code _ )
+    | code `elem` [1000, 4004, 4006, 4009, 4011, 4014] ->
+      Left (VoiceConnectionShutDown, Nothing)
+  e -> Left (VoiceConnectionRestart, Just . pack . show $ e)
+
 handleMsg :: (VoiceC r, P.Member (P.Error VoiceConnectionControl) r)
   => VoiceMsg
   -> Sem r ()
 handleMsg (Discord msg) = case msg of
-  Ready data' ->
+  Ready data' -> do
+    P.atomicModify (#initial .~ False)
+    P.atomicModify (#ssrc ?~ (data' ^. #ssrc))
+    P.atomicModify (#ip ?~ (data' ^. #ip))
+    P.atomicModify (#port ?~ (data' ^. #port))
+    P.atomicModify (#modes ?~ (data' ^. #modes))
+    -- TODO: notify client
+  SessionDescription data' -> do
+    P.atomicModify (#mode ?~ (data' ^. #mode))
+    P.atomicModify (#secretKey ?~ (data' ^. #secret_key))
+    -- TODO: notify client
+  SpeakingReq data' -> do
     debug . pack . show $ data'
-  SessionDescription data' ->
-    debug . pack . show $ data'
-  SpeakingReq data' ->
-    debug . pack . show $ data'
-  HeartBeatAck _ -> do
-    debug "Received heartbeat voice client ack"
+  HeartBeatAck receivedNonce -> do
+    debug $ "Received heartbeat voice client ack with nonce: " +|| receivedNonce ||+ ""
     P.atomicModify (#hbResponse .~ True)
+    savedNonce <- P.atomicGets (^. #nonce)
+    case savedNonce of
+      Nothing -> do
+        P.throw VoiceConnectionRestart
+      Just savedNonce -> do
+        when (savedNonce == receivedNonce) $ do
+          P.throw VoiceConnectionRestart
   Hello i -> do
-    debug $ "Received hello (interval: " +| i |+ ")"
+    debug $ "Received hello (interval: " +|| i ||+ ")"
     startHb i
-  Resumed ->
+  Resumed -> do
     debug "Resumed"
-  ClientDisconnect ->
+    -- TODO: handle resumed
+  ClientDisconnect -> do
     debug "Client disconnected"
+    -- TODO: handle client disconnect
 handleMsg (Control msg) = case msg of
   VoiceConnectionRestart -> do
-    P.atomicModify (#nonce .~ Nothing)
     P.throw VoiceConnectionRestart
   VoiceConnectionShutDown -> do
     P.throw VoiceConnectionShutDown
 
-controlStream :: VoiceConnection -> TBMQueue VoiceMsg -> IO ()
+controlStream :: VoiceC r
+  => VoiceConnection -> TBMQueue VoiceMsg -> Sem r ()
 controlStream conn outqueue = do
-  v <- UC.readChan (conn ^. #cmdOut)
-  r <- atomically $ do
+  v <- P.embed $ UC.readChan (conn ^. #cmdOut)
+  r <- P.embed . atomically $ do
     b <- tryWriteTBMQueue outqueue (Control v)
     case b of
-      Nothing -> pure False
-      Just True -> pure True
-      Just False -> retry
+      Nothing -> do
+        pure False
+      Just True -> do
+        pure True
+      Just False -> do
+        retry
   when r (controlStream conn outqueue)
 
-discordStream :: Connection -> TBMQueue VoiceMsg -> IO ()
+discordStream :: VoiceC r
+  => Connection -> TBMQueue VoiceMsg -> Sem r ()
 discordStream conn outqueue = do
-  msg :: Either SomeException BS.ByteString <-
-    catchAny (Right <$> receiveData conn) (\ex -> pure $ Left ex)
-  -- TOREMOVE
-  print msg
+  msg <- P.embed $ catchAny (Right <$> receiveData conn) handleWSException
   case msg of
-    Left _ -> do
-      atomically $ writeTBMQueue outqueue (Control VoiceConnectionRestart)
+    Left (c, _) -> do
+      P.embed . atomically $ writeTBMQueue outqueue (Control c)
     Right msg -> do
       let decoded = eitherDecode msg
       case decoded of
         Left _ -> do
           pure ()
         Right msg -> do
-          r <- atomically $ do
+          r <- P.embed . atomically $ do
             b <- tryWriteTBMQueue outqueue (Discord msg)
             case b of
-              Nothing -> pure False
-              Just True -> pure True
-              Just False -> retry
+              Nothing -> do
+                pure False
+              Just True -> do
+                pure True
+              Just False -> do
+                retry
           when r (discordStream conn outqueue)
 
 stopHb :: VoiceC r => Sem r ()
@@ -286,9 +323,8 @@ stopHb = do
 
 sendHb :: VoiceC r => Sem r ()
 sendHb = do
-  nonce <- P.embed $ getStdRandom (randomR (1, 2147483647))
+  nonce <- P.embed $ getStdRandom random
   P.atomicModify (#nonce ?~ nonce)
-  debug $ "Sending heartbeat (nonce: " +| nonce |+ ")"
   sendToWs $ HeartBeat (Just nonce)
   P.atomicModify (#hbResponse .~ False)
 
@@ -297,7 +333,8 @@ hbLoop interval = void . P.runError . forever $ do
   sendHb
   P.embed . threadDelay $ interval * 1000
   unlessM (P.atomicGets (^. #hbResponse)) $ do
-    debug "No heartbeat response, restarting voice connection"
+    -- TODO: handle severed ws connection with Resume
+    debug "No heartbeat ACK, restarting voice connection"
     mainWs <- P.note () =<< P.atomicGets (^. #mainWs)
     P.embed $ sendCloseCode mainWs 4000 ("No heartbeat in time" :: Text)
     P.throw ()

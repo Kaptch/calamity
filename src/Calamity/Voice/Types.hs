@@ -25,7 +25,7 @@ data ReadyData = ReadyData
     ssrc :: Int
   , ip :: Text
   , port :: Int
-  , modes :: [Text]
+  , modes :: [Mode]
   }
   deriving ( Show, Generic, FromJSON )
 
