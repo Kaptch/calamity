@@ -140,12 +140,12 @@ runWebsocket :: Members '[ P.Embed IO
                          , P.Final IO ] r
   => Text
   -> Text
-  -> Int
+  -> PortNumber
   -> (Connection -> P.Sem r a)
   -> P.Sem r (Maybe a)
 runWebsocket host path port ma = do
   inner <- bindSemToIO ma
-  embed $ runClient (unpack host) port (unpack path) inner
+  embed $ runSecureClient (unpack host) port (unpack path) inner
 
 sendToWs :: VoiceC r => SentVoiceDiscordMessage
   -> Sem r ()
@@ -163,7 +163,7 @@ outerloop :: VoiceC r => Sem r (Either VoiceConnectionControl ())
 outerloop = P.runError . forever $ do
   st <- P.atomicGet
   let host = st ^. #endpoint
-  let host' = fromMaybe host $ stripPrefix "ws://" host
+  let host' = fromMaybe host $ stripSuffix ":80" host
   innerLoopVal <- runWebsocket host' "/?v=4" 80 innerloop
   case innerLoopVal of
     Just VoiceConnectionRestart -> do
